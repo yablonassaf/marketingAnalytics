@@ -1,0 +1,115 @@
+# Assignment 2
+In this assignment, we will use what we've learned about modeling for marketing applications. This is structured as a competition where you and your team tries to do the best job of predicting household behavior.
+
+## Insurance for Chinese farmers
+This uses data from a study of the sale of farmers insurance to rural Chinese farmers. You can get the data [here](https://www.dropbox.com/s/uvej3ry3j84ms24/insurance_prediction_training.csv?dl=0).
+
+You will attempt to predict the purchase (`takeup`) of this insurance product. We suggest starting with penalized regression.
+
+```{r, message=FALSE, results='hide'}
+library(glmnet)
+library(dplyr)
+library(Hmisc)
+library(lubridate)
+library(ggplot2)
+library(readr)
+theme_set(theme_bw())
+```
+
+## Load and examine data
+Load the data file. You may also want to do some exploratory data analysis to better understand this data set.
+
+```{r}
+data <- readr::read_csv("insurance_prediction_training.csv")
+```
+
+Some info about the variables:
+- `region` code for region of household and farm
+- `takeup` whether they bought farmers insurance for this season -- our outcome
+- `age` of head of household
+- `agpop` is the number of people in the household
+- `rice_inc` is a measure of income from selling rice last year
+- `ricearea_2010` the size of the rice cultivation area 
+- `disaster_loss` is the loss in cultivation area from a disaster last year
+- `disaster_yes` is just an indicator for whether they were affected by a disaster last year
+
+## Modeling
+
+You should fit a model predicting takeup using the methods we discussed in class and illustrated in the worked example for caravan insurance.
+
+This includes:
+- Fitting a model and using cross-validation to estimate prediction error.
+- Examining the estimated prediction error as a function of the penalty
+- Extracting and examining predictions from the model
+
+A very basic model formula would be something like the one below, but you probably want to consider higher-dimensional models:
+
+```{r}
+formula.1 <-  ~ -1 + factor(region) + rice_inc
+
+mm.1 <- model.matrix(formula.1, data = data)
+```
+
+```{r}
+set.seed(3100)
+glmnet.1 <- cv.glmnet(
+    mm.1, data$takeup,
+    family = "binomial",
+    alpha = 0
+    )
+```
+
+## Suggested questions to ask yourselves
+What predictors of insurance purchase do you find? Think of interpretations for some. You might want to try using some lasso (L1) penalty to set many coefficients to exactly zero. You can do this with `cv.glmnet` by setting `alpha > 0`.
+
+What penalty (lambda) did you select? How?
+
+You may want to refer to the lab.
+
+## Submitting predictions
+Now get predictions for new households where we don't know yet whether they will buy insurance. You can get the data [here](https://www.dropbox.com/s/kjer33epe4ht042/insurance_prediction_to_predict.csv?dl=0).
+
+```{r}
+data.test <- readr::read_csv("insurance_prediction_to_predict.csv")
+```
+
+You should have 9805 households in the test data. (If not, download this file again, as the link above briefly pointed to the wrong file.)
+```{r}
+nrow(data.test)
+```
+
+
+Getting predictions will look something like this, assuming you have a formula object created earlier named `formula.1`:
+
+```{r}
+mm.test <- sparse.model.matrix(
+    formula.1,
+    data = data.test,
+    drop.levels = FALSE
+    )
+mm.test <- mm.test[, colnames(mm.1)]
+
+data.test$takeup.hat <- predict(
+    glmnet.1,
+    s = .05, # lambda
+    newx = mm.test,
+    type = "response"
+)[, 1]
+```
+
+```{r}
+data.test %>% select(id, region, rice_inc, takeup.hat) %>% head()
+```
+
+These (the entries in `takeup.hat`) are our predictions for these new households. You can now write these to a file and upload to [Kaggle](https://www.kaggle.com/c/mitsloanprediction2020).
+
+```{r}
+predictions <- data.test %>%
+    select(id, takeup = takeup.hat)
+
+write.csv(predictions, "our_predictions.csv", row.names = F)
+```
+
+Your predictions will be scored against the whether these households actually purchase. (In particular, we use what is alternatively called "logistic loss", "log loss", or "binomial deviance". What is most important is that if they purchase, higher probabilities score better; if they don't purchase, lower probabilities score better.)
+
+
